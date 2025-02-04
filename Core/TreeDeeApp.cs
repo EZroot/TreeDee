@@ -49,7 +49,7 @@ namespace TreeDee.Core
         float totalTime = 0f;
 
         // Directional light settings.
-        Vector3 lightDir = new Vector3(20,20,20);
+        Vector3 lightDir = new Vector3(20, 20, 20);
         int lightProjSize = 50;
         float lightDistance = 15f;
         private Vector3 sceneCenter = new Vector3(0, 0, 0);
@@ -77,9 +77,13 @@ namespace TreeDee.Core
                            ?? throw new NullReferenceException(nameof(IModelService));
 
             // Load diffuse texture.
-            texture = new nint[1];
+            texture = new nint[3];
             var tex = imageService.LoadTexture(renderService.RenderPtr, TreeDeeHelper.RESOURCES_FOLDER + "/face.png");
+            var tex1 = imageService.LoadTexture(renderService.RenderPtr, TreeDeeHelper.RESOURCES_FOLDER + "/texture.jpg");
+            var tex2 = imageService.LoadTexture(renderService.RenderPtr, TreeDeeHelper.RESOURCES_FOLDER + "/3d/Cat_diffuse.jpg");
             texture[0] = tex.Texture;
+            texture[2] = tex1.Texture;
+            texture[1] = tex2.Texture;
 
             // Use updated LoadSphere that supports shadow mapping uniforms.
             string sceneVertPath = TreeDeeHelper.RESOURCES_FOLDER + "/shaders/3d/scene/SceneShadow.vert";
@@ -87,8 +91,7 @@ namespace TreeDee.Core
             int totalCubes = cubeDim * cubeDim * cubeDim;
             for (int i = 0; i < totalCubes; i++)
             {
-                var sphere = modelService.Load3DModel(TreeDeeHelper.RESOURCES_FOLDER + "/3d/cat.obj", sceneVertPath,
-                    sceneFragPath, 16f / 9f);//LoadSphere(sceneVertPath, sceneFragPath, 16f / 9f);
+                var sphere = modelService.Load3DModel(TreeDeeHelper.RESOURCES_FOLDER + "/3d/cat.obj", sceneVertPath, sceneFragPath, 16f / 9f); //LoadSphere(sceneVertPath, sceneFragPath, 16f / 9f);
                 assetHandles.Add(sphere);
             }
 
@@ -120,40 +123,13 @@ namespace TreeDee.Core
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
 
             // Create depth shader.
-            string depthVert = @"
-                #version 330 core
-                layout (location = 0) in vec3 aPos;
-                uniform mat4 model;
-                uniform mat4 lightView;
-                uniform mat4 lightProjection;
-                void main()
-                {
-                    gl_Position = lightProjection * lightView * model * vec4(aPos, 1.0);
-                }";
-            string depthFrag = @"
-                #version 330 core
-                void main() { }";
+            string depthVert = FileHelper.ReadFileContents(TreeDeeHelper.RESOURCES_FOLDER + "/shaders/3d/depth/depth.vert");
+            string depthFrag = FileHelper.ReadFileContents(TreeDeeHelper.RESOURCES_FOLDER + "/shaders/3d/depth/depth.frag");
             depthShader = GLHelper.CreateShaderProgram(depthVert, depthFrag);
 
             // Debug shader for visualizing the depth (shadow) map.
-            string debugVert = @"
-                #version 330 core
-                layout (location = 0) in vec2 aPos;
-                layout (location = 1) in vec2 aTexCoord;
-                out vec2 TexCoord;
-                void main() {
-                    gl_Position = vec4(aPos, 0.0, 1.0);
-                    TexCoord = aTexCoord;
-                }";
-            string debugFrag = @"
-                #version 330 core
-                in vec2 TexCoord;
-                out vec4 FragColor;
-                uniform sampler2D debugTexture;
-                void main() {
-                    float depth = texture(debugTexture, TexCoord).r;
-                    FragColor = vec4(vec3(depth), 1.0);
-                }";
+            string debugVert = FileHelper.ReadFileContents(TreeDeeHelper.RESOURCES_FOLDER + "/shaders/3d/debug/debug.vert");
+            string debugFrag = FileHelper.ReadFileContents(TreeDeeHelper.RESOURCES_FOLDER + "/shaders/3d/debug/debug.frag");
             debugShader = GLHelper.CreateShaderProgram(debugVert, debugFrag);
 
             // Create a tiny fullscreen debug quad handle.
@@ -179,7 +155,9 @@ namespace TreeDee.Core
             GL.BindVertexArray(0);
             debugQuadHandle = new OpenGLHandle(new OpenGLMandatoryHandles(quadVao, quadVbo, 0, debugShader, 6));
 
-            arrowShader = CreateUnlitShader(); 
+            var unlitv = FileHelper.ReadFileContents(TreeDeeHelper.RESOURCES_FOLDER + "/shaders/3d/unlit/unlit.vert");
+            var unlitf = FileHelper.ReadFileContents(TreeDeeHelper.RESOURCES_FOLDER + "/shaders/3d/unlit/unlit.frag");
+            arrowShader = GLHelper.CreateShaderProgram(unlitv, unlitf);
             float[] arrowVerts = GenerateBetterArrowGeometry();
 
             int arrowVao = GL.GenVertexArray();
@@ -232,9 +210,14 @@ namespace TreeDee.Core
             if (InputManager.IsKeyPressed(SDL.SDL_Keycode.SDLK_r))
                 lightProjSize -= 1;
         }
+
 public void Render()
 {
-    // --- 1) Compute Light Matrices ---
+    // Ensure depth test is enabled so we get proper depth comparisons.
+    GL.Enable(EnableCap.DepthTest);
+    GL.DepthFunc(DepthFunction.Less);
+
+    // 1) Compute Light Matrices
     var dir = lightDir.Normalized();
     var lightPos = sceneCenter - dir * lightDistance;
     var lightView = Matrix4.LookAt(lightPos, sceneCenter, Vector3.UnitY);
@@ -245,9 +228,11 @@ public void Render()
     );
     var lightSpaceMatrix = lightProjection * lightView;
 
-    // --- 2) Shadow Pass: Render depth from light POV ---
+    // 2) Shadow Pass: Render depth from light's POV
     GL.Enable(EnableCap.CullFace);
-    GL.CullFace(CullFaceMode.Back);
+    // Typically cull front faces during shadow pass to reduce self-shadow artifacts
+    GL.CullFace(CullFaceMode.Front);
+
     GL.Viewport(0, 0, shadowWidth, shadowHeight);
     GL.BindFramebuffer(FramebufferTarget.Framebuffer, shadowFBO);
     GL.Clear(ClearBufferMask.DepthBufferBit);
@@ -256,12 +241,11 @@ public void Render()
     GL.UniformMatrix4(GL.GetUniformLocation(depthShader, "lightView"), false, ref lightView);
     GL.UniformMatrix4(GL.GetUniformLocation(depthShader, "lightProjection"), false, ref lightProjection);
 
+    // Optional polygon offset to reduce shadow acne
     GL.Enable(EnableCap.PolygonOffsetFill);
-    GL.Enable(EnableCap.Blend);
-    GL.BlendEquation(BlendEquationMode.Min);
-    GL.PolygonOffset(1.1f, 1.0f);
+    GL.PolygonOffset(2.0f, 4.0f);
 
-    // Render all scene objects for shadow
+    // Render all scene objects into the shadow (depth) map
     foreach (var handle in assetHandles)
     {
         var model = ComputeModelMatrix(handle);
@@ -270,49 +254,58 @@ public void Render()
         GL.DrawArrays(PrimitiveType.Triangles, 0, handle.Handles.VertexCount);
     }
 
-    // Ground quad (or whatever floor)
+    // Example floor (currently commented out):
     var floorPos = new Vector3(0, -20, -15);
     var floorModel = MathHelper.GetMatrixTranslation(floorPos, new Vector3(100, 100, 100))
                      * MathHelper.GetMatrixRotationAroundPivot(0, 0, 180, -floorPos);
-    GL.UniformMatrix4(GL.GetUniformLocation(depthShader, "model"), false, ref floorModel);
-    GL.BindVertexArray(quadHandle.Handles.Vao);
-    GL.DrawArrays(PrimitiveType.Triangles, 0, quadHandle.Handles.VertexCount);
+    // GL.UniformMatrix4(GL.GetUniformLocation(depthShader, "model"), false, ref floorModel);
+    // GL.BindVertexArray(quadHandle.Handles.Vao);
+    // GL.DrawArrays(PrimitiveType.Triangles, 0, quadHandle.Handles.VertexCount);
 
-    GL.Disable(EnableCap.Blend);
+    // Cleanup after shadow pass
     GL.Disable(EnableCap.PolygonOffsetFill);
     GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
 
-    // --- 3) Main Pass: Render from camera perspective ---
+    // 3) Main Pass (normal scene render)
+    // Revert to back-face culling
+    GL.CullFace(CullFaceMode.Back);
+
     GL.Viewport(0, 0, windowWidth, windowHeight);
     GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+
     var cam = (CameraGL3D)cameraService.GetActiveCamera();
 
-    // Draw objects with shadows
+    // Render models using the depthTexture for shadow sampling
     foreach (var handle in assetHandles)
     {
         var model = ComputeModelMatrix(handle);
         modelService.DrawModelGL(
-            handle, model, cam, texture[0], lightSpaceMatrix, depthTexture,
+            handle, model, cam, texture[1], lightSpaceMatrix, depthTexture,
             lightDir, new Vector3(1f, 1f, 1f), new Vector3(0f, 0f, 0.1f)
         );
     }
 
-    // Draw ground quad
+    // Ground quad if desired
     modelService.DrawModelGL(
         quadHandle, floorModel, cam, texture[0], lightSpaceMatrix, depthTexture,
         lightDir, new Vector3(1f, 1f, 1f), new Vector3(0f, 0f, 0.1f)
     );
 
-    // Draw arrow showing light direction
+    // Optional arrow to show light direction
     DrawLightArrow(cam, lightPos, dir * lightDistance);
 
-    // --- 4) Debug: Visualize Shadow Map ---
+    // 4) Debug: visualize the shadow map
+    // For a raw depth visualization, disable compare mode:
     GL.Viewport(0, 0, 1024, 1024);
     GL.UseProgram(debugShader);
     GL.ActiveTexture(TextureUnit.Texture0);
     GL.BindTexture(TextureTarget.Texture2D, depthTexture);
-    GL.Uniform1(GL.GetUniformLocation(debugShader, "debugTexture"), 0);
 
+    // Set compare mode to None so we sample raw depth as a "texture" (not shadow compare):
+    GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureCompareMode, (int)TextureCompareMode.None);
+    GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureCompareFunc, (int)All.Lequal);
+
+    GL.Uniform1(GL.GetUniformLocation(debugShader, "debugTexture"), 0);
     GL.BindVertexArray(debugQuadHandle.Handles.Vao);
     GL.DrawArrays(PrimitiveType.Triangles, 0, debugQuadHandle.Handles.VertexCount);
 
@@ -398,15 +391,17 @@ public void Render()
                 layer * spacing - offset,
                 row * spacing - offset);
             pos += gridOffset;
-            Matrix4 translation = Matrix4.CreateTranslation(pos);
-            Matrix4 rotation = MathHelper.GetMatrixRotationAroundPivot(270, 0, totalTime * 10f, -pos);//Matrix4.CreateRotationY(totalTime * Time.DeltaTime));
+            Matrix4 translation = MathHelper.GetMatrixTranslation(pos, 1f);
+            Matrix4 rotation =
+                MathHelper.GetMatrixRotationAroundPivot(270, 0, totalTime * 10f,
+                    -pos); //Matrix4.CreateRotationY(totalTime * Time.DeltaTime));
             return translation * rotation;
         }
 
-        private float[] GenerateBetterArrowGeometry(float shaftRadius = 0.02f,
-            float shaftLength = 0.7f,
-            float tipRadius = 0.06f,
-            float tipLength = 0.3f,
+        private float[] GenerateBetterArrowGeometry(float shaftRadius = 0.2f,
+            float shaftLength = 5.7f,
+            float tipRadius = 0.6f,
+            float tipLength = 1.3f,
             int segments = 16)
         {
             // We build a cylinder (for the shaft) from z=0 to z=shaftLength,
@@ -507,33 +502,6 @@ public void Render()
             }
 
             return verts.ToArray();
-        }
-
-
-        // Creates a basic unlit shader for the arrow
-        private int CreateUnlitShader()
-        {
-            string vs = @"
-                #version 330 core
-                layout(location = 0) in vec3 aPos;
-                uniform mat4 uModel;
-                uniform mat4 uView;
-                uniform mat4 uProjection;
-                void main()
-                {
-                    gl_Position = uProjection * uView * uModel * vec4(aPos, 1.0);
-                }";
-
-            string fs = @"
-                #version 330 core
-                out vec4 FragColor;
-                uniform vec3 uColor;
-                void main()
-                {
-                    FragColor = vec4(uColor, 1.0);
-                }";
-
-            return GLHelper.CreateShaderProgram(vs, fs);
         }
     }
 }
