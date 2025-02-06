@@ -9,6 +9,7 @@ using SDL2Engine.Events;
 using TreeDee.Core.Utils;
 using SDL2;
 using SDL2Engine.Core.Addressables.Models.Interfaces;
+using SDL2Engine.Core.Buffers.Interfaces;
 using SDL2Engine.Core.Cameras;
 using SDL2Engine.Core.Input;
 using SDL2Engine.Core.Lighting;
@@ -22,6 +23,7 @@ namespace TreeDee.Core
         IWindowService windowService;
         IImageService imageService;
         IModelService modelService;
+        IFrameBufferService fboService;
         ICameraService cameraService;
         IShadowPassService shadowPassService;
         
@@ -72,6 +74,8 @@ namespace TreeDee.Core
                            ?? throw new NullReferenceException(nameof(IModelService));
             shadowPassService = serviceProvider.GetService<IShadowPassService>()
                                ?? throw new NullReferenceException(nameof(IShadowPassService));
+            fboService = serviceProvider.GetService<IFrameBufferService>()
+                         ?? throw new NullReferenceException(nameof(IFrameBufferService));
 
             m_directionalLight = new Light(LightType.Directional, 50, 1, 150);
             shadowPassService.Initialize();
@@ -146,8 +150,7 @@ namespace TreeDee.Core
             shadowPassService.RenderShadowPass( m_directionalLight.LightView, m_directionalLight.LightProjection);
 
             // main render pass
-            modelService.BindFramebuffer(1920,1080);
-            GL.CullFace(CullFaceMode.Back);
+            fboService.BindFramebuffer(1920,1080);
             var cam = (CameraGL3D)cameraService.GetActiveCamera();
             for (var i = 0; i < assetHandles.Count; i++)
             {
@@ -170,10 +173,10 @@ namespace TreeDee.Core
             
             // shadowPassService.RenderDebugQuad();
             
-            modelService.UnbindFramebuffer();
+            fboService.UnbindFramebuffer();
             
             // render frame buffer
-            modelService.RenderFramebuffer();
+            fboService.RenderFramebuffer();
         }
 
         public void RenderGui() { }
