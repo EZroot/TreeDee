@@ -86,10 +86,10 @@ namespace TreeDee.Core
 
             // Load diffuse textures.
             texture = new nint[3];
-            var tex = imageService.LoadTexture(renderService.RenderPtr, TreeDeeHelper.RESOURCES_FOLDER + "/face.png");
-            var tex1 = imageService.LoadTexture(renderService.RenderPtr,
+            var tex = imageService.LoadTexture(TreeDeeHelper.RESOURCES_FOLDER + "/face.png");
+            var tex1 = imageService.LoadTexture(
                 TreeDeeHelper.RESOURCES_FOLDER + "/texture.jpg");
-            var tex2 = imageService.LoadTexture(renderService.RenderPtr,
+            var tex2 = imageService.LoadTexture(
                 TreeDeeHelper.RESOURCES_FOLDER + "/3d/Cat_diffuse.jpg");
             texture[0] = tex.Texture;
             texture[2] = tex1.Texture;
