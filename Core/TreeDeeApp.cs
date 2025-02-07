@@ -79,6 +79,8 @@ namespace TreeDee.Core
                          ?? throw new NullReferenceException(nameof(IFrameBufferService));
             grbService = serviceProvider.GetService<IGodRayBufferService>()
                          ?? throw new NullReferenceException(nameof(IGodRayBufferService));
+            
+            
             m_directionalLight = new Light(LightType.Directional, 50, 1, 150);
             shadowPassService.Initialize();
 
@@ -144,10 +146,12 @@ namespace TreeDee.Core
             // computing light / asset matrices
             Quaternion lightRotation = Quaternion.FromEulerAngles(lightRotationX, lightRotationY, lightRotationZ);
             var lightSpaceMatrix = m_directionalLight.Update(Vector3.Zero, lightRotation, lightDistance);
-            var floorPos = new Vector3(0, -20, -15);
+            
+            var floorPos = new Vector3(0, -20, -35);
             var floorModel = MathHelper.GetMatrixTranslation(floorPos, new Vector3(100, 100, 100)) *
                              MathHelper.GetMatrixRotationAroundPivot(0, 0, 180, -floorPos);
             var assetModels = new Matrix4[assetHandles.Count];
+            
 
             for (int i = 0; i < assetHandles.Count; i++)
             {
@@ -186,6 +190,9 @@ namespace TreeDee.Core
             // light dir arrow
             modelService.DrawArrow(arrowHandle, cam, m_directionalLight.LightPosition,
                 m_directionalLight.LightDirection);
+            
+            shadowPassService.RenderDebugQuad(false, 1, 150);
+
             fboService.UnbindFramebuffer();
 
             // god ray world space render pass
@@ -212,9 +219,7 @@ namespace TreeDee.Core
             // process god rays
             grbService.ProcessGodRays(cam, (Light)m_directionalLight, fboService.GetDepthTexture());
             // grbService.RenderDebug(); // visualize god rays 
-
             fboService.RenderFramebuffer();
-
         }
 
         public void RenderGui()
