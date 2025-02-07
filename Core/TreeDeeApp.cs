@@ -24,9 +24,10 @@ namespace TreeDee.Core
         IImageService imageService;
         IModelService modelService;
         IFrameBufferService fboService;
+        IGodRayBufferService grbService;
         ICameraService cameraService;
         IShadowPassService shadowPassService;
-        
+
         nint[] texture;
         List<OpenGLHandle> assetHandles = new();
 
@@ -73,18 +74,21 @@ namespace TreeDee.Core
             modelService = serviceProvider.GetService<IModelService>()
                            ?? throw new NullReferenceException(nameof(IModelService));
             shadowPassService = serviceProvider.GetService<IShadowPassService>()
-                               ?? throw new NullReferenceException(nameof(IShadowPassService));
+                                ?? throw new NullReferenceException(nameof(IShadowPassService));
             fboService = serviceProvider.GetService<IFrameBufferService>()
                          ?? throw new NullReferenceException(nameof(IFrameBufferService));
-
+            grbService = serviceProvider.GetService<IGodRayBufferService>()
+                         ?? throw new NullReferenceException(nameof(IGodRayBufferService));
             m_directionalLight = new Light(LightType.Directional, 50, 1, 150);
             shadowPassService.Initialize();
-            
+
             // Load diffuse textures.
             texture = new nint[3];
             var tex = imageService.LoadTexture(renderService.RenderPtr, TreeDeeHelper.RESOURCES_FOLDER + "/face.png");
-            var tex1 = imageService.LoadTexture(renderService.RenderPtr, TreeDeeHelper.RESOURCES_FOLDER + "/texture.jpg");
-            var tex2 = imageService.LoadTexture(renderService.RenderPtr, TreeDeeHelper.RESOURCES_FOLDER + "/3d/Cat_diffuse.jpg");
+            var tex1 = imageService.LoadTexture(renderService.RenderPtr,
+                TreeDeeHelper.RESOURCES_FOLDER + "/texture.jpg");
+            var tex2 = imageService.LoadTexture(renderService.RenderPtr,
+                TreeDeeHelper.RESOURCES_FOLDER + "/3d/Cat_diffuse.jpg");
             texture[0] = tex.Texture;
             texture[2] = tex1.Texture;
             texture[1] = tex2.Texture;
@@ -95,7 +99,8 @@ namespace TreeDee.Core
             int totalCubes = cubeDim * cubeDim * cubeDim;
             for (int i = 0; i < totalCubes; i++)
             {
-                var model = modelService.Load3DModel(TreeDeeHelper.RESOURCES_FOLDER + "/3d/cat.obj", sceneVertPath, sceneFragPath, 16f / 9f);
+                var model = modelService.Load3DModel(TreeDeeHelper.RESOURCES_FOLDER + "/3d/cat.obj", sceneVertPath,
+                    sceneFragPath, 16f / 9f);
                 assetHandles.Add(model);
                 shadowPassService.RegisterMesh(model, MathHelper.GetMatrixTranslation(Vector3.Zero));
             }
@@ -136,52 +141,89 @@ namespace TreeDee.Core
 
         public void Render()
         {
-            // light matrices
+            // computing light / asset matrices
             Quaternion lightRotation = Quaternion.FromEulerAngles(lightRotationX, lightRotationY, lightRotationZ);
-            var lightSpaceMatrix = m_directionalLight.Update(new Vector3(0,0,0), lightRotation, lightDistance);
-
-            // shadow pass
-            var assetModels = new Matrix4[assetHandles.Count];
-            for (var i = 0; i < assetHandles.Count; i++)
-            {
-                assetModels[i] = ComputeModelMatrix(assetHandles[i]);
-                shadowPassService.UpdateMeshModel(assetHandles[i], assetModels[i]);
-            }
-            shadowPassService.RenderShadowPass( m_directionalLight.LightView, m_directionalLight.LightProjection);
-
-            // main render pass
-            fboService.BindFramebuffer(1920,1080);
-            var cam = (CameraGL3D)cameraService.GetActiveCamera();
-            for (var i = 0; i < assetHandles.Count; i++)
-            {
-                modelService.DrawModelGL(
-                    assetHandles[i], assetModels[i], cam, texture[1], lightSpaceMatrix, shadowPassService.DepthTexturePtr,
-                    m_directionalLight.LightDirection, new Vector3(1f, 1f, 1f), new Vector3(0f, 0f, 0f));
-            }
-
+            var lightSpaceMatrix = m_directionalLight.Update(Vector3.Zero, lightRotation, lightDistance);
             var floorPos = new Vector3(0, -20, -15);
             var floorModel = MathHelper.GetMatrixTranslation(floorPos, new Vector3(100, 100, 100)) *
                              MathHelper.GetMatrixRotationAroundPivot(0, 0, 180, -floorPos);
-            
-            modelService.DrawModelGL(
-                quadHandle, floorModel, cam, texture[2], lightSpaceMatrix, shadowPassService.DepthTexturePtr,
-                m_directionalLight.LightDirection, new Vector3(1f, 1f, 1f), new Vector3(0f, 0f, 0f)
-            );
+            var assetModels = new Matrix4[assetHandles.Count];
 
-            // Draw light direction arrow.
-            modelService.DrawArrow(arrowHandle, cam, m_directionalLight.LightPosition, m_directionalLight.LightDirection);
-            
-            // shadowPassService.RenderDebugQuad();
-            
+            for (int i = 0; i < assetHandles.Count; i++)
+            {
+                assetModels[i] = ComputeModelMatrix(assetHandles[i]);
+            }
+
+            // shadow world space pass
+            for (int i = 0; i < assetHandles.Count; i++)
+            {
+                shadowPassService.UpdateMeshModel(assetHandles[i], assetModels[i]);
+            }
+
+            shadowPassService.RenderShadowPass(m_directionalLight.LightView, m_directionalLight.LightProjection);
+
+            // main scene geometry render
+            fboService.BindFramebuffer(1920, 1080);
+            CameraGL3D cam = (CameraGL3D)cameraService.GetActiveCamera();
+            for (int i = 0; i < assetHandles.Count; i++)
+            {
+                modelService.DrawModelGL(
+                    assetHandles[i],
+                    assetModels[i],
+                    cam,
+                    texture[1],
+                    lightSpaceMatrix,
+                    shadowPassService.DepthTexturePtr,
+                    m_directionalLight.LightDirection,
+                    new Vector3(1f, 1f, 1f),
+                    Vector3.Zero);
+            }
+
+            modelService.DrawModelGL(quadHandle, floorModel, cam,
+                texture[2], lightSpaceMatrix, shadowPassService.DepthTexturePtr,
+                m_directionalLight.LightDirection, new Vector3(1f, 1f, 1f), new Vector3(0f, 0f, 0f));
+
+            // light dir arrow
+            modelService.DrawArrow(arrowHandle, cam, m_directionalLight.LightPosition,
+                m_directionalLight.LightDirection);
             fboService.UnbindFramebuffer();
+
+            // god ray world space render pass
+            grbService.BindFramebuffer(windowWidth, windowHeight);
+            for (int i = 0; i < assetHandles.Count; i++)
+            {
+                modelService.DrawModelGL(
+                    assetHandles[i],
+                    assetModels[i],
+                    cam,
+                    texture[1],
+                    lightSpaceMatrix,
+                    shadowPassService.DepthTexturePtr,
+                    m_directionalLight.LightDirection,
+                    new Vector3(1f, 1f, 1f),
+                    Vector3.Zero);
+            }
+
+            modelService.DrawModelGL(quadHandle, floorModel, cam,
+                texture[2], lightSpaceMatrix, shadowPassService.DepthTexturePtr,
+                m_directionalLight.LightDirection, new Vector3(1f, 1f, 1f), new Vector3(0f, 0f, 0f));
+            grbService.UnbindFramebuffer();
             
-            // render frame buffer
+            // process god rays
+            grbService.ProcessGodRays(cam, (Light)m_directionalLight, fboService.GetDepthTexture());
+            // grbService.RenderDebug(); // visualize god rays 
+
             fboService.RenderFramebuffer();
+
         }
 
-        public void RenderGui() { }
+        public void RenderGui()
+        {
+        }
 
-        public void Shutdown() { }
+        public void Shutdown()
+        {
+        }
 
         // Computes the model matrix based on asset index and grid movement.
         private Matrix4 ComputeModelMatrix(OpenGLHandle handle)
