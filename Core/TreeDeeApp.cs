@@ -45,7 +45,7 @@ namespace TreeDee.Core
         float lightDistance = 15f;
 
         // Cube grid.
-        int cubeDim = 2;
+        int cubeDim = 1;
 
         // Light rotation angles (in radians).
         float lightRotationX = 0f;
@@ -204,9 +204,9 @@ namespace TreeDee.Core
                     Vector3.Zero);
             }
 
-            modelService.DrawModelGL(quadHandle, floorModel, cam,
-                texture[2], lightSpaceMatrix, shadowPassService.DepthTexturePtr,
-                m_directionalLight.LightDirection, new Vector3(1f, 1f, 1f), new Vector3(0f, 0f, 0f));
+            // modelService.DrawModelGL(quadHandle, floorModel, cam,
+            //     texture[2], lightSpaceMatrix, shadowPassService.DepthTexturePtr,
+            //     m_directionalLight.LightDirection, new Vector3(1f, 1f, 1f), new Vector3(0f, 0f, 0f));
             grbService.UnbindFramebuffer();
             
             // process god rays
@@ -242,7 +242,7 @@ namespace TreeDee.Core
                 layer * spacing - offset,
                 row * spacing - offset);
             pos += gridOffset;
-            Matrix4 translation = MathHelper.GetMatrixTranslation(pos, .35f);
+            Matrix4 translation = MathHelper.GetMatrixTranslation(pos, 1f);
             Matrix4 rotation = MathHelper.GetMatrixRotationAroundPivot(270, 0, totalTime * 10f, -pos);
             return translation * rotation;
         }
