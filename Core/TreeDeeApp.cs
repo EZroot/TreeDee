@@ -107,13 +107,16 @@ namespace TreeDee.Core
             {
                 var model = modelService.CreateSphere(sceneVertPath, sceneFragPath, 1920f / 1080f);
                 assetHandles.Add(model);
-                var pos = ComputeModelMatrixPos(model);
-                var bodyHandle = physicsService.CreatePhysicsBody(new System.Numerics.Vector3(pos.X, pos.Y, pos.Z),
-                    new System.Numerics.Vector3(1f), 1f);
+                var pos = ComputeModelMatrixPos(i);
+                // var bodyHandle = physicsService.CreatePhysicsBody(new System.Numerics.Vector3(pos.X, pos.Y, pos.Z),
+                //     new System.Numerics.Vector3(1f), 1f);
+                var bodyHandle = physicsService.CreateSpherePhysicsBody(
+                    new System.Numerics.Vector3(pos.X, pos.Y, pos.Z),
+                    radius: 1f, // Adjust as necessary
+                    mass: 1f);
                 assetPhysicsHandles.Add(bodyHandle);
                 shadowPassService.RegisterMesh(model, MathHelper.GetMatrixTranslation(pos));
             }
-
 
             quadHandle = modelService.CreateQuad(sceneVertPath, sceneFragPath, 16f / 9f);
             shadowPassService.RegisterMesh(quadHandle, MathHelper.GetMatrixTranslation(Vector3.Zero));
@@ -171,7 +174,6 @@ namespace TreeDee.Core
                 var bepuRot = bodyRef.Pose.Orientation;   
                 var pos = new OpenTK.Mathematics.Vector3(bepuPos.X, bepuPos.Y, bepuPos.Z);
                 var rot = new OpenTK.Mathematics.Quaternion(bepuRot.X, bepuRot.Y, bepuRot.Z, bepuRot.W);
-                Debug.Log($"BEPU: {pos} {rot}");
                 Matrix4 rotationMatrix = Matrix4.CreateFromQuaternion(rot);
                 Matrix4 translationMatrix = Matrix4.CreateTranslation(pos);
                 Matrix4 modelMatrix = translationMatrix * rotationMatrix;
@@ -276,9 +278,8 @@ namespace TreeDee.Core
             return translation * rotation;
         }
         
-        private Vector3 ComputeModelMatrixPos(OpenGLHandle handle)
+        private Vector3 ComputeModelMatrixPos(int index)
         {
-            int index = assetHandles.IndexOf(handle);
             int totalPerLayer = cubeDim * cubeDim;
             int layer = index / totalPerLayer;
             int rem = index % totalPerLayer;
