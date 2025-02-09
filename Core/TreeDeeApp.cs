@@ -41,11 +41,8 @@ namespace TreeDee.Core
         int windowHeight = 1080, windowWidth = 1920;
         float totalTime = 0f;
 
-        // Directional light settings.
-        float lightDistance = 15f;
-
         // Cube grid.
-        int cubeDim = 1;
+        int cubeDim = 2;
 
         // Light rotation angles (in radians).
         float lightRotationX = 0f;
@@ -101,13 +98,14 @@ namespace TreeDee.Core
             int totalCubes = cubeDim * cubeDim * cubeDim;
             for (int i = 0; i < totalCubes; i++)
             {
-                var model = modelService.Load3DModel(TreeDeeHelper.RESOURCES_FOLDER + "/3d/cat.obj", sceneVertPath,
-                    sceneFragPath, 16f / 9f);
+                var model = modelService.CreateSphere(sceneVertPath, sceneFragPath, 1920f / 1080f);//Load3DModel(TreeDeeHelper.RESOURCES_FOLDER + "/3d/cat.obj", sceneVertPath, sceneFragPath, 16f / 9f);
                 assetHandles.Add(model);
                 shadowPassService.RegisterMesh(model, MathHelper.GetMatrixTranslation(Vector3.Zero));
             }
 
             quadHandle = modelService.CreateQuad(sceneVertPath, sceneFragPath, 16f / 9f);
+            shadowPassService.RegisterMesh(quadHandle, MathHelper.GetMatrixTranslation(Vector3.Zero));
+
             arrowHandle = modelService.Create3DArrow(
                 TreeDeeHelper.RESOURCES_FOLDER + "/shaders/3d/unlit/unlit.vert",
                 TreeDeeHelper.RESOURCES_FOLDER + "/shaders/3d/unlit/unlit.frag");
@@ -116,12 +114,6 @@ namespace TreeDee.Core
         public void Update(float deltaTime)
         {
             totalTime += deltaTime;
-
-            // Light distance adjustments.
-            if (InputManager.IsKeyPressed(SDL.SDL_Keycode.SDLK_LSHIFT))
-                lightDistance += 1f;
-            if (InputManager.IsKeyPressed(SDL.SDL_Keycode.SDLK_LCTRL))
-                lightDistance -= 1f;
 
             // --- Light Rotation Controls ---
             // Increase/decrease rotation around X-axis.
@@ -145,11 +137,11 @@ namespace TreeDee.Core
         {
             // computing light / asset matrices
             Quaternion lightRotation = Quaternion.FromEulerAngles(lightRotationX, lightRotationY, lightRotationZ);
-            var lightSpaceMatrix = m_directionalLight.Update(Vector3.Zero, lightRotation, lightDistance);
+            var lightSpaceMatrix = m_directionalLight.Update(Vector3.Zero, lightRotation, 0);
             
             var floorPos = new Vector3(0, -20, -35);
-            var floorModel = MathHelper.GetMatrixTranslation(floorPos, new Vector3(100, 100, 100)) *
-                             MathHelper.GetMatrixRotationAroundPivot(0, 0, 180, -floorPos);
+            var floorModel = MathHelper.GetMatrixTranslation(floorPos, new Vector3(100, 100, 1)) *
+                             MathHelper.GetMatrixRotationAroundPivot(0, 0, 0, -floorPos);
             var assetModels = new Matrix4[assetHandles.Count];
             
 
@@ -163,11 +155,12 @@ namespace TreeDee.Core
             {
                 shadowPassService.UpdateMeshModel(assetHandles[i], assetModels[i]);
             }
+            shadowPassService.UpdateMeshModel(quadHandle, floorModel);
 
             shadowPassService.RenderShadowPass(m_directionalLight.LightView, m_directionalLight.LightProjection);
 
             // main scene geometry render
-            fboService.BindFramebuffer(1920, 1080);
+            fboService.BindFramebuffer(windowWidth, windowHeight);
             CameraGL3D cam = (CameraGL3D)cameraService.GetActiveCamera();
             for (int i = 0; i < assetHandles.Count; i++)
             {
@@ -188,7 +181,7 @@ namespace TreeDee.Core
                 m_directionalLight.LightDirection, new Vector3(1f, 1f, 1f), new Vector3(0f, 0f, 0f));
 
             // light dir arrow
-            modelService.DrawArrow(arrowHandle, cam, m_directionalLight.LightPosition,
+            modelService.DrawArrow(arrowHandle, cam, -m_directionalLight.LightPosition,
                 m_directionalLight.LightDirection);
             
             shadowPassService.RenderDebugQuad(false, 1, 150);
@@ -210,7 +203,7 @@ namespace TreeDee.Core
                     new Vector3(1f, 1f, 1f),
                     Vector3.Zero);
             }
-
+            
             // modelService.DrawModelGL(quadHandle, floorModel, cam,
             //     texture[2], lightSpaceMatrix, shadowPassService.DepthTexturePtr,
             //     m_directionalLight.LightDirection, new Vector3(1f, 1f, 1f), new Vector3(0f, 0f, 0f));
@@ -219,6 +212,7 @@ namespace TreeDee.Core
             // process god rays
             grbService.ProcessGodRays(cam, (Light)m_directionalLight, fboService.GetDepthTexture());
             // grbService.RenderDebug(); // visualize god rays 
+            GL.Viewport(0,0,windowWidth,windowHeight);
             fboService.RenderFramebuffer();
         }
 
