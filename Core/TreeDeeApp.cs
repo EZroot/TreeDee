@@ -1,3 +1,4 @@
+using BepuPhysics;
 using Microsoft.Extensions.DependencyInjection;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
@@ -14,6 +15,8 @@ using SDL2Engine.Core.Cameras;
 using SDL2Engine.Core.Input;
 using SDL2Engine.Core.Lighting;
 using SDL2Engine.Core.Lighting.Interfaces;
+using SDL2Engine.Core.Physics.Interfaces;
+using SDL2Engine.Core.Utils;
 
 namespace TreeDee.Core
 {
@@ -23,6 +26,7 @@ namespace TreeDee.Core
         IWindowService windowService;
         IImageService imageService;
         IModelService modelService;
+        private IPhysicsService physicsService;
         IFrameBufferService fboService;
         IGodRayBufferService grbService;
         ICameraService cameraService;
@@ -30,6 +34,7 @@ namespace TreeDee.Core
 
         nint[] texture;
         List<OpenGLHandle> assetHandles = new();
+        List<BodyHandle> assetPhysicsHandles = new();
 
         // Grid movement.
         private Vector3 gridOffset = Vector3.Zero;
@@ -76,7 +81,9 @@ namespace TreeDee.Core
                          ?? throw new NullReferenceException(nameof(IFrameBufferService));
             grbService = serviceProvider.GetService<IGodRayBufferService>()
                          ?? throw new NullReferenceException(nameof(IGodRayBufferService));
-            
+            physicsService = serviceProvider.GetService<IPhysicsService>()
+                         ?? throw new NullReferenceException(nameof(IPhysicsService));
+
             
             m_directionalLight = new Light(LightType.Directional, 50, 1, 150);
             shadowPassService.Initialize();
@@ -87,7 +94,7 @@ namespace TreeDee.Core
             var tex1 = imageService.LoadTexture(
                 TreeDeeHelper.RESOURCES_FOLDER + "/texture.jpg");
             var tex2 = imageService.LoadTexture(
-                TreeDeeHelper.RESOURCES_FOLDER + "/3d/Cat_diffuse.jpg");
+                TreeDeeHelper.RESOURCES_FOLDER + "/3d/2k_mercury.jpg");
             texture[0] = tex.Texture;
             texture[2] = tex1.Texture;
             texture[1] = tex2.Texture;
@@ -98,10 +105,15 @@ namespace TreeDee.Core
             int totalCubes = cubeDim * cubeDim * cubeDim;
             for (int i = 0; i < totalCubes; i++)
             {
-                var model = modelService.CreateSphere(sceneVertPath, sceneFragPath, 1920f / 1080f);//Load3DModel(TreeDeeHelper.RESOURCES_FOLDER + "/3d/cat.obj", sceneVertPath, sceneFragPath, 16f / 9f);
+                var model = modelService.CreateSphere(sceneVertPath, sceneFragPath, 1920f / 1080f);
                 assetHandles.Add(model);
-                shadowPassService.RegisterMesh(model, MathHelper.GetMatrixTranslation(Vector3.Zero));
+                var pos = ComputeModelMatrixPos(model);
+                var bodyHandle = physicsService.CreatePhysicsBody(new System.Numerics.Vector3(pos.X, pos.Y, pos.Z),
+                    new System.Numerics.Vector3(1f), 1f);
+                assetPhysicsHandles.Add(bodyHandle);
+                shadowPassService.RegisterMesh(model, MathHelper.GetMatrixTranslation(pos));
             }
+
 
             quadHandle = modelService.CreateQuad(sceneVertPath, sceneFragPath, 16f / 9f);
             shadowPassService.RegisterMesh(quadHandle, MathHelper.GetMatrixTranslation(Vector3.Zero));
@@ -115,6 +127,12 @@ namespace TreeDee.Core
         {
             totalTime += deltaTime;
 
+            if (InputManager.IsKeyPressed(SDL.SDL_Keycode.SDLK_SPACE))
+            {
+                var handle = assetPhysicsHandles[0];
+                var n = new System.Numerics.Vector3(0, 10, 0);
+                physicsService.ApplyLinearImpulse(handle, in n);
+            }
             // --- Light Rotation Controls ---
             // Increase/decrease rotation around X-axis.
             if (InputManager.IsKeyPressed(SDL.SDL_Keycode.SDLK_i))
@@ -147,7 +165,18 @@ namespace TreeDee.Core
 
             for (int i = 0; i < assetHandles.Count; i++)
             {
-                assetModels[i] = ComputeModelMatrix(assetHandles[i]);
+                var bod = assetPhysicsHandles[i];
+                var bodyRef = physicsService.GetBodyReference(bod);
+                var bepuPos = bodyRef.Pose.Position;       
+                var bepuRot = bodyRef.Pose.Orientation;   
+                var pos = new OpenTK.Mathematics.Vector3(bepuPos.X, bepuPos.Y, bepuPos.Z);
+                var rot = new OpenTK.Mathematics.Quaternion(bepuRot.X, bepuRot.Y, bepuRot.Z, bepuRot.W);
+                Debug.Log($"BEPU: {pos} {rot}");
+                Matrix4 rotationMatrix = Matrix4.CreateFromQuaternion(rot);
+                Matrix4 translationMatrix = Matrix4.CreateTranslation(pos);
+                Matrix4 modelMatrix = translationMatrix * rotationMatrix;
+                assetModels[i] = modelMatrix;
+                // assetModels[i] = ComputeModelMatrix(assetHandles[i]);
             }
 
             // shadow world space pass
@@ -189,30 +218,31 @@ namespace TreeDee.Core
             fboService.UnbindFramebuffer();
 
             // god ray world space render pass
-            grbService.BindFramebuffer(windowWidth, windowHeight);
-            for (int i = 0; i < assetHandles.Count; i++)
-            {
-                modelService.DrawModelGL(
-                    assetHandles[i],
-                    assetModels[i],
-                    cam,
-                    texture[1],
-                    lightSpaceMatrix,
-                    shadowPassService.DepthTexturePtr,
-                    m_directionalLight.LightDirection,
-                    new Vector3(1f, 1f, 1f),
-                    Vector3.Zero);
-            }
-            
+            // grbService.BindFramebuffer(windowWidth, windowHeight);
+            // for (int i = 0; i < assetHandles.Count; i++)
+            // {
+            //     modelService.DrawModelGL(
+            //         assetHandles[i],
+            //         assetModels[i],
+            //         cam,
+            //         texture[1],
+            //         lightSpaceMatrix,
+            //         shadowPassService.DepthTexturePtr,
+            //         m_directionalLight.LightDirection,
+            //         new Vector3(1f, 1f, 1f),
+            //         Vector3.Zero);
+            // }
+            //
             // modelService.DrawModelGL(quadHandle, floorModel, cam,
             //     texture[2], lightSpaceMatrix, shadowPassService.DepthTexturePtr,
             //     m_directionalLight.LightDirection, new Vector3(1f, 1f, 1f), new Vector3(0f, 0f, 0f));
-            grbService.UnbindFramebuffer();
-            
-            // process god rays
-            grbService.ProcessGodRays(cam, (Light)m_directionalLight, fboService.GetDepthTexture());
+            // grbService.UnbindFramebuffer();
+            //
+            // // process god rays
+            // grbService.ProcessGodRays(cam, (Light)m_directionalLight, fboService.GetDepthTexture());
             // grbService.RenderDebug(); // visualize god rays 
             GL.Viewport(0,0,windowWidth,windowHeight);
+            Debug.Log($"{windowWidth} {windowHeight}");
             fboService.RenderFramebuffer();
         }
 
@@ -241,9 +271,28 @@ namespace TreeDee.Core
                 layer * spacing - offset,
                 row * spacing - offset);
             pos += gridOffset;
-            Matrix4 translation = MathHelper.GetMatrixTranslation(pos, 1f);
+            Matrix4 translation = MathHelper.GetMatrixTranslation(pos, 5f);
             Matrix4 rotation = MathHelper.GetMatrixRotationAroundPivot(270, 0, totalTime * 10f, -pos);
             return translation * rotation;
+        }
+        
+        private Vector3 ComputeModelMatrixPos(OpenGLHandle handle)
+        {
+            int index = assetHandles.IndexOf(handle);
+            int totalPerLayer = cubeDim * cubeDim;
+            int layer = index / totalPerLayer;
+            int rem = index % totalPerLayer;
+            int row = rem / cubeDim;
+            int col = rem % cubeDim;
+
+            float spacing = 20f;
+            float offset = (cubeDim - 1) * spacing * 0.5f;
+            float rowOffset = (row % 2 == 1) ? spacing * 0.5f : 0f;
+            Vector3 pos = new Vector3(col * spacing + rowOffset - offset,
+                layer * spacing - offset,
+                row * spacing - offset);
+            pos += gridOffset;
+            return pos;
         }
     }
 }
