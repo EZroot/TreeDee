@@ -41,16 +41,18 @@ namespace TreeDee.Core
         private float gridSpeed = 0.1f;
 
         private OpenGLHandle quadHandle;
+        private BodyHandle quadBodyHandle;
+        
         private OpenGLHandle arrowHandle;
 
         int windowHeight = 1080, windowWidth = 1920;
         float totalTime = 0f;
 
         // Cube grid.
-        int cubeDim = 2;
+        int cubeDim = 10;
 
         // Light rotation angles (in radians).
-        float lightRotationX = 0f;
+        float lightRotationX = 30f;
         float lightRotationY = 0f;
         float lightRotationZ = 0f;
         float rotationSpeed = 0.02f;
@@ -107,7 +109,7 @@ namespace TreeDee.Core
             {
                 var model = modelService.CreateSphere(sceneVertPath, sceneFragPath, 1920f / 1080f);
                 assetHandles.Add(model);
-                var pos = ComputeModelMatrixPos(i);
+                var pos = ComputeModelMatrixPos(i);//new Vector3(i % 2, i * 10, 0);//
                 // var bodyHandle = physicsService.CreatePhysicsBody(new System.Numerics.Vector3(pos.X, pos.Y, pos.Z),
                 //     new System.Numerics.Vector3(1f), 1f);
                 var bodyHandle = physicsService.CreateSpherePhysicsBody(
@@ -118,8 +120,9 @@ namespace TreeDee.Core
                 shadowPassService.RegisterMesh(model, MathHelper.GetMatrixTranslation(pos));
             }
 
-            quadHandle = modelService.CreateQuad(sceneVertPath, sceneFragPath, 16f / 9f);
-            shadowPassService.RegisterMesh(quadHandle, MathHelper.GetMatrixTranslation(Vector3.Zero));
+            quadHandle = modelService.CreateCube(sceneVertPath, sceneFragPath, 16f / 9f);
+            physicsService.CreateStaticPhysicsBody(new System.Numerics.Vector3(0, -20, 0), new System.Numerics.Vector3(200, 2, 200));
+            // shadowPassService.RegisterMesh(quadHandle, MathHelper.GetMatrixTranslation(Vector3.Zero));
 
             arrowHandle = modelService.Create3DArrow(
                 TreeDeeHelper.RESOURCES_FOLDER + "/shaders/3d/unlit/unlit.vert",
@@ -160,9 +163,8 @@ namespace TreeDee.Core
             Quaternion lightRotation = Quaternion.FromEulerAngles(lightRotationX, lightRotationY, lightRotationZ);
             var lightSpaceMatrix = m_directionalLight.Update(Vector3.Zero, lightRotation, 0);
             
-            var floorPos = new Vector3(0, -20, -35);
-            var floorModel = MathHelper.GetMatrixTranslation(floorPos, new Vector3(100, 100, 1)) *
-                             MathHelper.GetMatrixRotationAroundPivot(0, 0, 0, -floorPos);
+            var floorPos = new Vector3(0, -20, 0);
+            var floorModel = MathHelper.GetMatrixTranslation(floorPos, new Vector3(100, 1, 100));
             var assetModels = new Matrix4[assetHandles.Count];
             
 
@@ -175,6 +177,7 @@ namespace TreeDee.Core
                 var pos = new OpenTK.Mathematics.Vector3(bepuPos.X, bepuPos.Y, bepuPos.Z);
                 var rot = new OpenTK.Mathematics.Quaternion(bepuRot.X, bepuRot.Y, bepuRot.Z, bepuRot.W);
                 Matrix4 rotationMatrix = Matrix4.CreateFromQuaternion(rot);
+                rotationMatrix = MathHelper.GetMatrixRotationAroundPivot(rotationMatrix, -pos);
                 Matrix4 translationMatrix = Matrix4.CreateTranslation(pos);
                 Matrix4 modelMatrix = translationMatrix * rotationMatrix;
                 assetModels[i] = modelMatrix;
@@ -182,13 +185,13 @@ namespace TreeDee.Core
             }
 
             // shadow world space pass
-            for (int i = 0; i < assetHandles.Count; i++)
-            {
-                shadowPassService.UpdateMeshModel(assetHandles[i], assetModels[i]);
-            }
-            shadowPassService.UpdateMeshModel(quadHandle, floorModel);
-
-            shadowPassService.RenderShadowPass(m_directionalLight.LightView, m_directionalLight.LightProjection);
+            // for (int i = 0; i < assetHandles.Count; i++)
+            // {
+            //     shadowPassService.UpdateMeshModel(assetHandles[i], assetModels[i]);
+            // }
+            // // shadowPassService.UpdateMeshModel(quadHandle, floorModel);
+            //
+            // shadowPassService.RenderShadowPass(m_directionalLight.LightView, m_directionalLight.LightProjection);
 
             // main scene geometry render
             fboService.BindFramebuffer(windowWidth, windowHeight);
@@ -215,7 +218,7 @@ namespace TreeDee.Core
             modelService.DrawArrow(arrowHandle, cam, -m_directionalLight.LightPosition,
                 m_directionalLight.LightDirection);
             
-            shadowPassService.RenderDebugQuad(false, 1, 150);
+            // shadowPassService.RenderDebugQuad(false, 1, 150);
 
             fboService.UnbindFramebuffer();
 
@@ -235,16 +238,15 @@ namespace TreeDee.Core
             //         Vector3.Zero);
             // }
             //
-            // modelService.DrawModelGL(quadHandle, floorModel, cam,
-            //     texture[2], lightSpaceMatrix, shadowPassService.DepthTexturePtr,
-            //     m_directionalLight.LightDirection, new Vector3(1f, 1f, 1f), new Vector3(0f, 0f, 0f));
+            // // modelService.DrawModelGL(quadHandle, floorModel, cam,
+            // //     texture[2], lightSpaceMatrix, shadowPassService.DepthTexturePtr,
+            // //     m_directionalLight.LightDirection, new Vector3(1f, 1f, 1f), new Vector3(0f, 0f, 0f));
             // grbService.UnbindFramebuffer();
-            //
+            
             // // process god rays
             // grbService.ProcessGodRays(cam, (Light)m_directionalLight, fboService.GetDepthTexture());
             // grbService.RenderDebug(); // visualize god rays 
             GL.Viewport(0,0,windowWidth,windowHeight);
-            Debug.Log($"{windowWidth} {windowHeight}");
             fboService.RenderFramebuffer();
         }
 
@@ -286,14 +288,23 @@ namespace TreeDee.Core
             int row = rem / cubeDim;
             int col = rem % cubeDim;
 
-            float spacing = 20f;
-            float offset = (cubeDim - 1) * spacing * 0.5f;
-            float rowOffset = (row % 2 == 1) ? spacing * 0.5f : 0f;
-            Vector3 pos = new Vector3(col * spacing + rowOffset - offset,
-                layer * spacing - offset,
-                row * spacing - offset);
+            float spacing = 3;
+            float gridOffsetAmount = (cubeDim - 1) * spacing * 0.5f;
+    
+            // Base position in the grid:
+            float baseX = col * spacing - gridOffsetAmount;
+            float baseY = (layer * spacing - gridOffsetAmount) * 10;
+            float baseZ = row * spacing - gridOffsetAmount;
+
+            // Offset every other sphere along x:
+            // For instance, add half the spacing if the index is odd.
+            float xOffset = (index % 2 == 1) ? spacing * 0.5f : 0f;
+            float x = baseX + xOffset;
+
+            Vector3 pos = new Vector3(x, baseY, baseZ);
             pos += gridOffset;
             return pos;
         }
+
     }
 }
