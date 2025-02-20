@@ -1,4 +1,5 @@
 using BepuPhysics;
+using ImGuiNET;
 using Microsoft.Extensions.DependencyInjection;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
@@ -13,6 +14,8 @@ using SDL2Engine.Core.Addressables.Models.Interfaces;
 using SDL2Engine.Core.Buffers.Interfaces;
 using SDL2Engine.Core.Cameras;
 using SDL2Engine.Core.Geometry;
+using SDL2Engine.Core.GuiRenderer;
+using SDL2Engine.Core.GuiRenderer.Helpers;
 using SDL2Engine.Core.Input;
 using SDL2Engine.Core.Lighting;
 using SDL2Engine.Core.Lighting.Interfaces;
@@ -26,6 +29,7 @@ namespace TreeDee.Core
     {
         IRenderService renderService;
         IWindowService windowService;
+        private IGuiRenderService guiRenderService;
         IImageService imageService;
         IModelService modelService;
         private IPhysicsService physicsService;
@@ -35,15 +39,17 @@ namespace TreeDee.Core
         IShadowPassService shadowPassService;
 
         int windowHeight = 1080, windowWidth = 1920;
+        private ImGuiDockData m_dockerData;
         private Scene m_scene;
         private GameObject3D m_arrowGO;
-        
         private List<GameObject3D> m_physicsObjectList = new();
-
+        
         public void Initialize(IServiceProvider serviceProvider)
         {
             renderService = serviceProvider.GetService<IRenderService>()
                             ?? throw new NullReferenceException(nameof(IRenderService));
+            guiRenderService = serviceProvider.GetService<IGuiRenderService>()
+                              ?? throw new NullReferenceException(nameof(IGuiRenderService));
             windowService = serviceProvider.GetService<IWindowService>()
                             ?? throw new NullReferenceException(nameof(IWindowService));
             imageService = serviceProvider.GetService<IImageService>()
@@ -66,6 +72,14 @@ namespace TreeDee.Core
                 windowHeight = e.WindowSettings.Height;
                 windowWidth = e.WindowSettings.Width;
             });
+            
+            m_dockerData = new ImGuiDockData(
+                new DockPanelData("Main Dock", true),
+                new DockPanelData("Left Dock", true),
+                new DockPanelData("Top Dock", true),
+                new DockPanelData("Right Dock", true),
+                new DockPanelData("Bottom Dock", true),
+                hasFileMenu: true);
 
             // New Scene
             m_scene = new Scene(serviceProvider.GetService<IFrameBufferService>(),
@@ -197,10 +211,26 @@ namespace TreeDee.Core
         public void Render()
         {
             m_scene.Render();
+            
         }
 
         public void RenderGui()
         {
+            if (m_dockerData.IsDockInitialized == false)
+            {
+                m_dockerData = guiRenderService.InitializeDockSpace(m_dockerData);
+            }
+            guiRenderService.RenderFullScreenDockSpace(m_dockerData);
+            ImGui.ShowDemoWindow();
+
+            if (ImGui.BeginMainMenuBar())
+            {
+                var fps = $"Fps: {Time.Fps:F2} (delta: {Time.DeltaTime:F2})";
+                var fullHeader =
+                    $"Map Editor - Mouse: {InputManager.MouseX}x{InputManager.MouseY} Renderer: {PlatformInfo.RendererType} {fps}";
+                ImGui.Text(fullHeader);
+                ImGui.EndMainMenuBar();
+            }
         }
 
         public void Shutdown()
